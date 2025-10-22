@@ -1,0 +1,90 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Datasuite Download Center - Upload</title>
+    <style>
+      body { font-family: Arial, sans-serif; padding: 20px; }
+      #preview table { border-collapse: collapse; width: 100%; }
+      #preview th, #preview td { border: 1px solid #ddd; padding: 6px; font-size: 12px; }
+      .muted { color: #666; font-size: 13px; }
+      .selectors { margin-top: 12px; }
+      .pill { display:inline-block; padding:4px 8px; margin:3px; border-radius:12px; background:#f1f1f1; font-size:12px; }
+    </style>
+  </head>
+  <body>
+    <h2>Datasuite Download Center — Phase 1 (Upload & Consolidate)</h2>
+
+    <label>Choose ZIP of CSVs (max 500 MB):</label><br/>
+    <input id="file" type="file" accept=".zip" />
+    <button id="upload">Upload & Consolidate</button>
+    <span id="status" class="muted"></span>
+
+    <div class="selectors" id="distincts" style="display:none;">
+      <h3>Distinct values (sample)</h3>
+      <div><strong>Current Station:</strong> <span id="ds-current"></span></div>
+      <div><strong>Receiver Type:</strong> <span id="ds-receiver"></span></div>
+      <div><strong>Journey Type:</strong> <span id="ds-journey"></span></div>
+      <div><strong>Receive Status:</strong> <span id="ds-receive"></span></div>
+    </div>
+
+    <h3>Preview (first 50 rows)</h3>
+    <div id="preview">No preview yet.</div>
+
+    <script>
+      const uploadBtn = document.getElementById('upload');
+      const fileInput = document.getElementById('file');
+      const status = document.getElementById('status');
+      const previewDiv = document.getElementById('preview');
+
+      uploadBtn.addEventListener('click', async () => {
+        const file = fileInput.files[0];
+        if (!file) return alert('Please choose a .zip file to upload.');
+        if (!file.name.toLowerCase().endsWith('.zip')) return alert('Only .zip files allowed.');
+
+        status.textContent = 'Uploading and processing... (this may take a while for large files)';
+        previewDiv.innerHTML = '';
+        document.getElementById('distincts').style.display = 'none';
+
+        const fd = new FormData();
+        fd.append('zipfile', file);
+
+        try {
+          const resp = await fetch('/api/upload', { method: 'POST', body: fd });
+          const json = await resp.json();
+          if (!resp.ok) {
+            status.textContent = 'Error: ' + (json.error || resp.statusText);
+            return;
+          }
+
+          status.textContent = 'Processing complete. Consolidated file: ' + json.consolidatedPath;
+
+          // show distincts
+          document.getElementById('distincts').style.display = 'block';
+          const setToHTML = (elid, arr) => {
+            const parent = document.getElementById(elid);
+            parent.innerHTML = (arr && arr.length) ? arr.slice(0,50).map(v => `<span class="pill">${v}</span>`).join('') : '<span class="muted">No values</span>';
+          };
+          setToHTML('ds-current', json.distinct.currentStation || []);
+          setToHTML('ds-receiver', json.distinct.receiverType || []);
+          setToHTML('ds-journey', json.distinct.journeyType || []);
+          setToHTML('ds-receive', json.distinct.receiveStatus || []);
+
+          // show preview
+          if (json.preview && json.preview.length) {
+            const keys = Object.keys(json.preview[0]);
+            let html = '<table><thead><tr>' + keys.map(k => `<th>${k}</th>`).join('') + '</tr></thead><tbody>';
+            html += json.preview.map(r => '<tr>' + keys.map(k => `<td>${(r[k] || '').toString().slice(0,80)}</td>`).join('') + '</tr>').join('');
+            html += '</tbody></table>';
+            previewDiv.innerHTML = html;
+          } else {
+            previewDiv.innerText = 'No preview rows returned.';
+          }
+        } catch (err) {
+          status.textContent = 'Error: ' + err.message;
+          console.error(err);
+        }
+      });
+    </script>
+  </body>
+</html>
